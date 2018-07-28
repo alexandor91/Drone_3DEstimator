@@ -15,110 +15,104 @@ All the codes are included in the "QuadControl.cpp" file.
 ### 1. Bodyrate Controller
 The code corresponding to body control is from line 119 to line 128.\
 '''\
-float p_error = pqrCmd[0] - pqr[0];\
-float u_bar_p = Ixx * kpPQR[0] * p_error;
+  float phi = rollEst;\
+  float theta = pitchEst;
 
-float q_error = pqrCmd[1] - pqr[1];\
-float u_bar_q = Iyy * kpPQR[1] * q_error;
+  Mat3x3F rotation = Mat3x3F::Zeros();\
+  rotation(0, 0) = 1;\
+  rotation(0, 1) = sin(phi) * tan(theta);\
+  rotation(0, 2) = cos(phi) * tan(theta);\
+  rotation(1, 0) = 0;\
+  rotation(1, 1) = cos(phi);\
+  rotation(1, 2) = -sin(phi); \
+  rotation(2, 0) = 0;\
+  rotation(2, 1) = sin(phi) / cos(theta);\
+  rotation(2, 2) = cos(phi) / cos(theta);
+  
+  V3F euler_dot = rotation * gyro;
 
-float r_error = pqrCmd[2] - pqr[2];\
-float u_bar_r = Izz * kpPQR[2] * r_error;
-
-V3F momentCmd(u_bar_p, u_bar_q, u_bar_r);\
+  float predictedRoll = rollEst + dtIMU * euler_dot.x;\
+  float predictedPitch = pitchEst + dtIMU * euler_dot.y;\
+  ekfState(6) = ekfState(6) + dtIMU * euler_dot.z;\
+  // normalize yaw to -pi .. pi\
+  if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;\
+  if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;\
 '''\
 Fron the code snippet above, it is obvious that the commanded moments are proportional to the difference of body rates, the intertia od the drone about each axis is also taken into account.
-### 2. Roll Pitch Controller
+### 3. Roll Pitch Controller
 The code corresponding to roll pitch control is from 157 to 173.\
 '''\
- float c_d = collThrustCmd / mass;\
-  if (collThrustCmd > 0.0){\
-    float target_R13 = -CONSTRAIN(accelCmd[0] / c_d, -maxTiltAngle, maxTiltAngle);\
-    float target_R23 = -CONSTRAIN(accelCmd[1] / c_d, -maxTiltAngle, maxTiltAngle);\
-    pqrCmd[0] = (1 / R(2, 2)) * (-R(1, 0) * kpBank * (R(0, 2) - target_R13) + R(0, 0) * kpBank * (R(1, 2) - target_R23));\
-    pqrCmd[1] = (1 / R(2, 2)) * (-R(1, 1) * kpBank * (R(0, 2) - target_R13) + R(0, 1) * kpBank * (R(1, 2) - target_R23));\
-  }
-  else {\
-  pqrCmd[0] = 0.0;\
-  pqrCmd[1] = 0.0;\
-  collThrustCmd = 0.0;\
-  }\
-'''\
-To calculate the target angle, drone mass is accounted for. The element in the non-linear rotation matrix is responsible for the non-linear transform from local acceleration to body rate. This pitch and roll controller is cascaded to the body rate controller, so the output is desired body rate.
-### 3. Altitude Controller
-The code of this controller part is from line 203 to line 211.\
-'''\
-float error = posZCmd - posZ;\
-float h_dot_cmd = kpPosZ * error + velZCmd;\
-h_dot_cmd = CONSTRAIN(h_dot_cmd, -maxAscentRate, maxDescentRate);\
-integratedAltitudeError += error * dt;\
-float acceleration_cmd = accelZCmd + kpVelZ * (h_dot_cmd - velZ) + KiPosZ * integratedAltitudeError;
+  float phi = rollEst;\
+  float theta = pitchEst;
 
-float R33 = R(2,2);\
-thrust = mass * (9.81f - acceleration_cmd) / R33;\
-thrust = CONSTRAIN(thrust, 4 * minMotorThrust, 4 * maxMotorThrust);\
-'''\
-The bottom two lines convert the desired acceleration to collective thrust, also includes the non-linear effects from non-zero roll or pitch angles, the two p controllers, cascaded together form the second order control system, one for velocity control, the other for position control. Aside from the normal p term, the integrator is adopted to handle the shift of weight presented in one of the drones of scenario 4. 
-### 4. Lateral Position Controller
-Line 247 to line 263 is the code for horizontal position control.\
-'''\
-velCmd.x = kpPosXY * (posCmd.x - pos.x);\
-velCmd.y = kpPosXY * (posCmd.y - pos.y);\
-float vel_norm = sqrt(velCmd.x * velCmd.x + velCmd.y * velCmd.y);
- 
-if (vel_norm > maxSpeedXY) {\
-    velCmd.x = CONSTRAIN(velCmd.x, -velCmd.x * maxSpeedXY / vel_norm, velCmd.x * maxSpeedXY / vel_norm);\
-    velCmd.y = CONSTRAIN(velCmd.y, -velCmd.y * maxSpeedXY / vel_norm, velCmd.y * maxSpeedXY / vel_norm);\
-  }\
-accelCmd.x += kpPosXY * (posCmd.x - pos.x) + kpVelXY * (velCmd.x - vel.x);\
-accelCmd.y += kpPosXY * (posCmd.y - pos.y) + kpVelXY * (velCmd.y - vel.y);
-
-float accel_norm = sqrt(accelCmd.x * accelCmd.x + accelCmd.y * accelCmd.y);
-
-if (accel_norm > maxAccelXY) {\
-	  accelCmd.x = CONSTRAIN(accelCmd.x, -accelCmd.x * maxAccelXY / accel_norm, accelCmd.x * maxAccelXY / accel_norm);\
-	  accelCmd.y = CONSTRAIN(accelCmd.y, -accelCmd.y * maxAccelXY / accel_norm, accelCmd.y * maxAccelXY / accel_norm);\
-  }\
-'''\
-The local NE position and velocity  are used to generate a commanded local acceleration, here the desired velocity and the desired accceleration are constrained to the bounding range to ensure safe operation in reality.
-### 5. Yaw Controller
-Line 284 to line 291 for yaw control.\
-'''\
-yawCmd = fmodf(yawCmd, 2.0 * 3.1416f);\
-float yaw_error = yawCmd - yaw;\
-if (yaw_error > 3.1416f)\
-	  yaw_error = yaw_error - (2.0f * 3.1416f);\
-else if (yaw_error < -3.1416f)\
-	  yaw_error = yaw_error + (2.0f * 3.1416f);
+  Mat3x3F rotation = Mat3x3F::Zeros();\
+  rotation(0, 0) = 1;\
+  rotation(0, 1) = sin(phi) * tan(theta);\
+  rotation(0, 2) = cos(phi) * tan(theta);\
+  rotation(1, 0) = 0;\
+  rotation(1, 1) = cos(phi);\
+  rotation(1, 2) = -sin(phi); \
+  rotation(2, 0) = 0;\
+  rotation(2, 1) = sin(phi) / cos(theta);\
+  rotation(2, 2) = cos(phi) / cos(theta);
   
-yawRateCmd = kpYaw * yaw_error;\
+  V3F euler_dot = rotation * gyro;
+
+  float predictedRoll = rollEst + dtIMU * euler_dot.x;\
+  float predictedPitch = pitchEst + dtIMU * euler_dot.y;\
+  ekfState(6) = ekfState(6) + dtIMU * euler_dot.z;\
+  // normalize yaw
+  if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;\
+  if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;\
 '''\
-The code snippet above is very simple, the controller output is proportional  to the difference between disired yaw and actual yaw.
-### 6. Motor Commands
-Line 73 to line 92 for four motor commands given the moment and collective thrust commands.\
 '''\
-float l = L / sqrt(2);\
-float term_A = collThrustCmd;\
-float term_B = momentCmd[0]/ l;\
-float term_C = momentCmd[1] / l;\
-float term_D = -momentCmd[2] /kappa;
-
-float F0 = (term_A + term_B + term_C + term_D) / 4.0f; //front left\
-float F1 = (term_A + term_C - term_B - term_D) / 4.0f; //front right\
-float F2 = (term_A + term_B - term_C - term_D) / 4.0f; //rear left\
-float F3 = (term_A + term_D - term_B - term_C) / 4.0f; //rear right
-
-//printf("F0 force %f/n", term_A);\
-//printf("F1 force %f/n", term_B);\
-//printf("F2 force %f/n", term_C);\
-//printf("F3 force %f/n", term_D);
-
-cmd.desiredThrustsN[0] = CONSTRAIN(F0, minMotorThrust, maxMotorThrust);\
-cmd.desiredThrustsN[1] = CONSTRAIN(F1, minMotorThrust, maxMotorThrust);\
-cmd.desiredThrustsN[2] = CONSTRAIN(F2, minMotorThrust, maxMotorThrust);\
-cmd.desiredThrustsN[3] = CONSTRAIN(F3, minMotorThrust, maxMotorThrust);\
+  float phi = roll;\
+  float theta = pitch;\
+  float psi = yaw;
+  
+  RbgPrime(0, 0) = - cos(theta) * sin(psi);\
+  RbgPrime(0, 1) = - sin(phi) * sin(theta) * sin(psi) - cos(phi) * cos(psi);\
+  RbgPrime(0, 2) = - cos(phi) * sin(theta) * sin(psi) + sin(phi) * cos(psi);\
+  RbgPrime(1, 0) = cos(theta) * cos(psi);\
+  RbgPrime(1, 1) = sin(phi) * sin(theta) * cos(psi) - cos(phi) * sin(psi);\
+  RbgPrime(1, 2) = cos(phi) * sin(theta) * cos(psi) + sin(phi) * sin(psi);\
 '''\
-The output here is the individual thrust force generated by each motor, the three moments about respective axis along with the collective force are mapped accordingly, to note is the moment about z axis, in local NED all the upward thrust are negative.
+'''\
+  gPrime(0, 3) = dt;\
+  gPrime(1, 4) = dt;\
+  gPrime(2, 5) = dt;\
+  gPrime(3, 6) = (RbgPrime(0) * accel).sum() * dt;\
+  gPrime(4, 6) = (RbgPrime(1) * accel).sum() * dt;\
+  gPrime(5, 6) = (RbgPrime(2) * accel).sum() * dt;
 
+  ekfCov = gPrime * ekfCov * gPrime.transpose() + Q;\
+'''\
+### 4. Magnotometer Update
+'''
+  hPrime(0, 6) = 1;\
+  zFromX(0) = ekfState(6);\
+  float diff = z(0) - zFromX(0);\
+  if (diff > F_PI)\
+	  zFromX(0) += 2.f*F_PI;\
+  else if (diff < -F_PI) \
+	  zFromX(0) -= 2.f*F_PI;\
+'''
+### 5. GPS update
+'''
+  hPrime(0, 0) = 1;\
+  hPrime(1, 1) = 1;\
+  hPrime(2, 2) = 1;\
+  hPrime(3, 3) = 1;\
+  hPrime(4, 4) = 1;\
+  hPrime(5, 5) = 1;
+
+  zFromX(0) = ekfState(0);\
+  zFromX(1) = ekfState(1);\
+  zFromX(2) = ekfState(2);\
+  zFromX(3) = ekfState(3);\
+  zFromX(4) = ekfState(4);\
+  zFromX(5) = ekfState(5);\
+'''
 ## Results
 The final results for different scenarios are presented below.
 1. Attitude scenario\
