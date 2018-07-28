@@ -6,14 +6,20 @@ This repository is estalished for the projet 4 of Udacity "Flying car" nanodegre
 ## C++ Environment Setup
 
 ---
-1. Download or clone the [project repository](https://github.com/udacity/FCND-Controls-CPP) onto the local pc.  
-2. Use any C++ editor to fire the project, I used Visual Studio as editor, load the "sln" project and retarget the solution for new version SDK, then compile and run the program.
+1. Clone the repository
+git clone [project repository]（https://github.com/udacity/FCND-Estimation-CPP.git）
+2. Import the code into your IDE, including open .sln, then retarget the SDK to the lastest version 
+3. You should now be able to compile and run the estimation simulator just as you did in the controls project
+
+You should now be able to compile and run the estimation simulator just as you did in the controls project
 ---
 
 ## Code Implementation
-All the codes are included in the "QuadControl.cpp" file.
-### 1. Bodyrate Controller
-The code corresponding to body control is from line 119 to line 128.\
+All the codes are included in the "QuadEstimatorEKF.cpp" file.
+### 1. Standard deviation of measurement noise
+The simulator is implemented, and the measurements from GPS and accelerometer are recorded into Graph1 and Graph2 txt files, then a scripts is used to load the recording and the method mean and stddev in numbepy class are adopted over the second column of file to get standard deviation.
+### 2. Non-linear rate gyro integration
+The code corresponding to modified rate gyro integration is from line 98 to line 119.
 '''\
   float phi = rollEst;\
   float theta = pitchEst;
@@ -38,33 +44,22 @@ The code corresponding to body control is from line 119 to line 128.\
   if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;\
   if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;\
 '''\
-Fron the code snippet above, it is obvious that the commanded moments are proportional to the difference of body rates, the intertia od the drone about each axis is also taken into account.
-### 3. Roll Pitch Controller
+From the code snippet above, the rotation matrix is based on current euler angles to improve performance, the yaw angle is also normalized in the range from -pi to pi.
+### 3. Prediction step
 The code corresponding to roll pitch control is from 157 to 173.\
 '''\
-  float phi = rollEst;\
-  float theta = pitchEst;
+  predictedState(0) = curState(0) + predictedState(3) * dt;\
+  predictedState(1) = curState(1) + predictedState(4) * dt;\
+  predictedState(2) = curState(2) + predictedState(5) * dt;\
+  predictedState(5) = curState(5) - CONST_GRAVITY * dt;
 
-  Mat3x3F rotation = Mat3x3F::Zeros();\
-  rotation(0, 0) = 1;\
-  rotation(0, 1) = sin(phi) * tan(theta);\
-  rotation(0, 2) = cos(phi) * tan(theta);\
-  rotation(1, 0) = 0;\
-  rotation(1, 1) = cos(phi);\
-  rotation(1, 2) = -sin(phi); \
-  rotation(2, 0) = 0;\
-  rotation(2, 1) = sin(phi) / cos(theta);\
-  rotation(2, 2) = cos(phi) / cos(theta);
-  
-  V3F euler_dot = rotation * gyro;
+  V3F rotated_accel = attitude.Rotate_BtoI(accel);
 
-  float predictedRoll = rollEst + dtIMU * euler_dot.x;\
-  float predictedPitch = pitchEst + dtIMU * euler_dot.y;\
-  ekfState(6) = ekfState(6) + dtIMU * euler_dot.z;\
-  // normalize yaw
-  if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;\
-  if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;\
+  predictedState(3) = predictedState(3) + rotated_accel.x * dt;\
+  predictedState(4) = predictedState(4) + rotated_accel.y * dt;\
+  predictedState(5) = predictedState(5) + rotated_accel.z * dt;\
 '''\
+The code above is the new state update part, the position and velocity are updated accordingly.\
 '''\
   float phi = roll;\
   float theta = pitch;\
@@ -77,6 +72,7 @@ The code corresponding to roll pitch control is from 157 to 173.\
   RbgPrime(1, 1) = sin(phi) * sin(theta) * cos(psi) - cos(phi) * sin(psi);\
   RbgPrime(1, 2) = cos(phi) * sin(theta) * cos(psi) + sin(phi) * sin(psi);\
 '''\
+This code snippet in cpp file is from 180 to 189, corresponding to the gprime matrix to convert the body rate in local frame to global frame.
 '''\
   gPrime(0, 3) = dt;\
   gPrime(1, 4) = dt;\
@@ -87,7 +83,9 @@ The code corresponding to roll pitch control is from 157 to 173.\
 
   ekfCov = gPrime * ekfCov * gPrime.transpose() + Q;\
 '''\
+The snippet in source file is from 269 to 276, the ekf covariance is updated via gprime function, acceleration is also accounted for as a command to calculate the gPrime matrix.
 ### 4. Magnotometer Update
+The magnetometer update is from 333 to line 339.
 '''
   hPrime(0, 6) = 1;\
   zFromX(0) = ekfState(6);\
@@ -97,7 +95,9 @@ The code corresponding to roll pitch control is from 157 to 173.\
   else if (diff < -F_PI) \
 	  zFromX(0) -= 2.f*F_PI;\
 '''
+This update will include the magnetometer measurements, the error between magnetometer and the current state estimate is taken into consideration to correct the angle error.
 ### 5. GPS update
+The counterpart is from line 300 to 312.
 '''
   hPrime(0, 0) = 1;\
   hPrime(1, 1) = 1;\
@@ -113,21 +113,18 @@ The code corresponding to roll pitch control is from 157 to 173.\
   zFromX(4) = ekfState(4);\
   zFromX(5) = ekfState(5);\
 '''
+The hPrime for observation update is very simple with only constant values, the estimated measurements are current states accordingly except for the yaw anlge.
 ## Results
 The final results for different scenarios are presented below.
 1. Attitude scenario\
-![Attitude control](/img/attitude-scenario.JPG)
-<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Attitude counteracting the yaw pertubation<br />
-The drone can be resistant to the rotational rate about x, and recovered to level attitude shortly.\
-2. Attitude scenario\
-![Position control](/img/position-scenario.JPG)
-<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Position control of two drones, one with yaw offset<br />
-The drone can be controlled to move towards the target position, yaw angle can be oriented to zero shortly.
-3. Non-idealities scenario\
-![Attitude control](/img/non-ideality.JPG)
-<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Non-idealities control<br />
-Non idealiies includes the shifting mass and the actual heavy mass, Fron picture above, the three drones all reach the target position successfully, drone 3's trajectory is a smooth curve.
-4. Trajectory scenario\
-![Attitude control](/img/trajectory-scenario5.JPG)
-<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Trajectory follower<br />
-Here only drone 1 passes, the lighter drone 2 based on the same settings from the scenario 4 can perform the tracking roughly, it cannot hold to path fairly well, if the velocity from the trajectory can be generated as well, the tracking controller may perform better for drone 2. 
+![scenario 6](/img/scenario-6-noise.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 6. Noise capturing of GPS and accelerometer<br />
+The calculated deviation parameters capture the 68% measurements correcty.\
+2. Attitude estimator\
+![scenario 7](/img/scenario-7-attitude.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 7. Attitude estimator <br />
+After the improvement bt non-linear update over gyro rate, the integration scheme results in an estimator of less than 0.1 rad/s of each euler angles  for duration more than 3 seconds.\
+3. Predict state update\
+![scenario 7](/img/scenario-7-attitude.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 7. Attitude estimator <br />
+after the improvement bt non-linear update over gyro rate, the integration scheme results in an estimator of less than 0.1 rad/s of each euler angles  for duration more than 3 seconds.\
