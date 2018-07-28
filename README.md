@@ -10,7 +10,6 @@ This repository is estalished for the projet 4 of Udacity "Flying car" nanodegre
 git clone [project repository]（https://github.com/udacity/FCND-Estimation-CPP.git）
 2. Import the code into your IDE, including open .sln, then retarget the SDK to the lastest version 
 3. You should now be able to compile and run the estimation simulator just as you did in the controls project
-
 You should now be able to compile and run the estimation simulator just as you did in the controls project
 ---
 
