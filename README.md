@@ -125,6 +125,22 @@ The calculated deviation parameters capture the 68% measurements correcty.\
 <br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 7. Attitude estimator <br />
 After the improvement bt non-linear update over gyro rate, the integration scheme results in an estimator of less than 0.1 rad/s of each euler angles  for duration more than 3 seconds.\
 3. Predict state update\
-![scenario 7](/img/scenario-7-attitude.JPG)
-<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 7. Attitude estimator <br />
-after the improvement bt non-linear update over gyro rate, the integration scheme results in an estimator of less than 0.1 rad/s of each euler angles  for duration more than 3 seconds.\
+![scenario 8](/img/scenario-8-predict.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 8. Position and velocity estimate<br />
+The estimator can tranck the position and velocity correctly.\
+4. Covariance update\
+![scenario 9](/img/scenario-9-covariance.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 9.Covariance update<br />
+The standard deviation of x position and corresponding velocity can grow correctly with the data within 1 second duration, the drift grow slowly over the duration., two sigma white lines bound the estimated state  properly.\
+5. Predict state update\
+![scenario 10](/img/scenario-10-mag.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 10. Magnetometer update<br />
+The estimated standard deviation captures the error accurately and maintain an error of less than 0.1rad in heading for at least 10 seconds of the simulation.\
+6. Predict state update\
+![scenario 11](/img/scenario-11.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 11. Closed loop with GPS<br />
+The entire simulation sycle is completed with the estimated position error less than 1 meter. Here the GPS in config files are increased somewhat to model the error accurately.\
+7. Closed loop with custom controller\
+![scenario 12](/img/scenario-12.JPG)
+<br />&emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp; &emsp; &emsp;  &emsp;  &emsp;&emsp; &emsp;  &emsp;  &emsp;Scenario 12. Closed loop with custom controller<br />
+The controller that has been integrated originally is replaced with the 3D controller from project 3. The parameter in config file are also de-tuned again, most of the parameters like kp for positiona and velocity control are all recudes somewhat, in particulat the body rate, about each axis is reduced a lot, the kp for yaw rate is limited to 15, otherwise the bigger value beyond this threshold will reult in the overshooting in z position in the end od the simulation cycle, no the two times' tranversing flying has misaligned trajectory which still close to each other. The drone at the end position of the simulation will drop a little lower that the target z position, the integrator ki parameter is increased to reduce this drift\
